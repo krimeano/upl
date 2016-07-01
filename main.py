@@ -5,7 +5,62 @@ class Config:
     filename = "results.csv"
 
 
+class NumberWeighted:
+    def __init__(self, n, w=1):
+        # if not w:
+        #     raise AssertionError('number weight should be not null')
+        if not w:
+            n = 0
+        self.n = n
+        self.w = w
+
+    def __add__(self, other):
+        if not other.w:
+            return NumberWeighted(self.n, self.w)
+        sum_w = self.w + other.w
+        out = NumberWeighted((self.n * self.w + other.n * other.w) / sum_w, sum_w)
+        return out
+
+    def __str__(self):
+        return "{:.3f}({:d})".format(*[self.n, self.w])
+
+
+class TeamStats:
+    """
+    team: Team
+    """
+
+    def __init__(self, team):
+        self.team = team
+
+    @staticmethod
+    def sum_scored(ss):
+        return NumberWeighted(sum(ss) / len(ss), len(ss))
+
+    def get_scored_home(self):
+        return TeamStats.sum_scored(self.team.scored_home)
+
+    def get_scored_away(self):
+        return TeamStats.sum_scored(self.team.scored_away)
+
+    def get_scored(self):
+        return self.get_scored_home() + self.get_scored_away()
+
+    def get_missed_home(self):
+        return TeamStats.sum_scored(self.team.missed_home)
+
+    def get_missed_away(self):
+        return TeamStats.sum_scored(self.team.missed_away)
+
+    def get_missed(self):
+        return self.get_missed_home() + self.get_missed_away()
+
+
 class Team:
+    """
+    :teams: Team[]
+    :matches: Match[]
+    """
     teams = []
 
     def __init__(self, name):
@@ -24,6 +79,10 @@ class Team:
 
     @staticmethod
     def get_team(name):
+        """
+        :param name:
+        :return: Team
+        """
         for x in Team.teams:
             if x.name == name:
                 return x
@@ -32,14 +91,19 @@ class Team:
         return team
 
     def add_match(self, match):
+        """
+        :param match: Match
+        :return: Team
+        """
         me = None
         r = match.get_result()
         if r == 'n':
             return self
 
         if match.team == self:
-            self.scored_home.append(match.scored)
-            self.missed_home.append(match.scored_away)
+            if not match.walkover:
+                self.scored_home.append(match.scored)
+                self.missed_home.append(match.scored_away)
             if r == '1':
                 self.won_home += 1
             elif r == '2':
@@ -47,8 +111,9 @@ class Team:
             elif r == 'x':
                 self.drawn_home += 1
         elif match.team_away == self:
-            self.scored_away.append(match.scored_away)
-            self.missed_away.append(match.scored)
+            if not match.walkover:
+                self.scored_away.append(match.scored_away)
+                self.missed_away.append(match.scored)
             if r == '1':
                 self.lost_away += 1
             elif r == '2':
@@ -135,6 +200,10 @@ class Match:
 
 
 class Upl:
+    """
+    matches: Match[]
+    """
+
     def __init__(self):
         self.config = Config()
         self.matches = []
@@ -147,12 +216,25 @@ class Upl:
 
     def gather_data(self):
         Team.teams = sorted(Team.teams, key=lambda t: t.comparison(), reverse=True)
+        total_scored = NumberWeighted(0, 0)
+        total_scored_home = NumberWeighted(0, 0)
+        total_scored_away = NumberWeighted(0, 0)
         for x in Team.teams:
-            print(x.name, x.get_played(), x.get_wins(), x.get_drows(), x.get_looses(), x.get_goals_scored(),
-                  x.get_goals_missed(), x.get_goals_diff(), x.get_points())
-            # for y in x.matches:
-            #     print('   ', y)
-
+            s = TeamStats(x)
+            scored = s.get_scored()
+            scored_home = s.get_scored_home()
+            scored_away = s.get_scored_away()
+            missed = s.get_missed()
+            missed_home = s.get_missed_home()
+            missed_away = s.get_missed_away()
+            total_scored += scored
+            total_scored_home += s.get_scored_home()
+            total_scored_away += s.get_scored_away()
+            print(x.name, x.get_points(), '>',
+                  scored, '(', scored_home, '+', scored_away, ')', ':',
+                  missed,'(', missed_home, '+', missed_away, ')',
+                  "> {:d}':{:d}' / goal".format(*[int(90 / scored.n), int(90 / missed.n)]))
+        print('Total scored:', total_scored, 'Home:', total_scored_home, 'Away:', total_scored_away)
         return self
 
     def stats(self):
