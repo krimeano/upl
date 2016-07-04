@@ -2,7 +2,10 @@ __author__ = "krimeano"
 
 
 class Config:
-    filename = "results.csv"
+    filename_results = "results.csv"
+    filename_pairs = "pairs.csv"
+    matches_per_tour = 7
+    # filename = "rpl.csv"
 
 
 class NumberWeighted:
@@ -29,13 +32,18 @@ class TeamStats:
     """
     team: Team
     """
+    mean_goals = 0
+    mean_goals_home = 0
+    mean_goals_away = 0
 
     def __init__(self, team):
         self.team = team
 
     @staticmethod
     def sum_scored(ss):
-        return NumberWeighted(sum(ss) / len(ss), len(ss))
+        if len(ss):
+            return NumberWeighted(sum(ss) / len(ss), len(ss))
+        return NumberWeighted(0, 0)
 
     def get_scored_home(self):
         return TeamStats.sum_scored(self.team.scored_home)
@@ -54,6 +62,32 @@ class TeamStats:
 
     def get_missed(self):
         return self.get_missed_home() + self.get_missed_away()
+
+    @staticmethod
+    def calculate_mean_goals():
+        total_scored = NumberWeighted(0, 0)
+        total_scored_home = NumberWeighted(0, 0)
+        total_scored_away = NumberWeighted(0, 0)
+        for x in Team.teams:
+            s = x.stats
+            scored = s.get_scored()
+            scored_home = s.get_scored_home()
+            scored_away = s.get_scored_away()
+            missed = s.get_missed()
+            missed_home = s.get_missed_home()
+            missed_away = s.get_missed_away()
+            total_scored += scored
+            total_scored_home += s.get_scored_home()
+            total_scored_away += s.get_scored_away()
+            # print(x.name, x.get_points(), '>',
+            #       scored, '(', scored_home, '+', scored_away, ')', ':',
+            #       missed, '(', missed_home, '+', missed_away, ')',
+            #       "> {:d}':{:d}' / goal".format(*[scored.n and int(90 / scored.n), missed.n and int(90 / missed.n)]))
+        TeamStats.mean_goals = total_scored.n
+        TeamStats.mean_goals_home = total_scored_home.n
+        TeamStats.mean_goals_away = total_scored_away.n
+
+        print('Total scored:', total_scored, 'Home:', total_scored_home, 'Away:', total_scored_away)
 
 
 class Team:
@@ -76,6 +110,7 @@ class Team:
         self.lost_away = 0
         self.drawn_home = 0
         self.drawn_away = 0
+        self.stats = TeamStats(self)
 
     @staticmethod
     def get_team(name):
@@ -153,7 +188,7 @@ class Team:
         return len(self.matches)
 
     def __str__(self):
-        return '"' + self.name + '"'
+        return self.name
 
     def comparison(self):
         return self.get_points() * 10 ** 6 + self.get_wins() * 10 ** 4 + self.get_goals_diff() * 10 ** 2 + self.get_goals_scored()
@@ -199,6 +234,35 @@ class Match:
         return 'n'
 
 
+class Pair:
+    """
+    :team_home: Team
+    """
+    min_goals = 100
+    max_goals = 0
+
+    def __init__(self, teams):
+        """
+        :param teams: Team[]
+        """
+        self.teams = teams
+        self.team_home = teams[0]
+        self.team_away = teams[1]
+        self.goals_home = 0
+        self.goals_away = 0
+
+    def estimate(self):
+        n = Config.matches_per_tour
+
+        self.goals_home = NumberWeighted(TeamStats.mean_goals_home, n)
+        self.goals_home += self.team_home.stats.get_scored_home() + self.team_away.stats.get_missed_away()
+        self.goals_away = NumberWeighted(TeamStats.mean_goals_away, n)
+        self.goals_away += self.team_away.stats.get_scored_away() + self.team_home.stats.get_missed_home()
+        Pair.min_goals = min(Pair.min_goals, self.goals_home.n, self.goals_away.n)
+        Pair.max_goals = max(Pair.max_goals, self.goals_home.n, self.goals_away.n)
+        return self
+
+
 class Upl:
     """
     matches: Match[]
@@ -207,38 +271,46 @@ class Upl:
     def __init__(self):
         self.config = Config()
         self.matches = []
+        self.pairs = []
 
     def read_data(self):
-        with open(self.config.filename) as f:
+        with open(self.config.filename_results) as f:
             self.matches = [Match([z.strip() for z in y[1].split('-')], [z.strip() for z in y[2].split(':')])
                             for y in [x.strip().split('\t') for x in f.read().split('\n')]]
+        with open(self.config.filename_pairs) as f:
+            self.pairs = [Pair([Team.get_team(z.strip()) for z in y.split('-')]) for y in
+                          [x.strip().split('\t')[1] for x in f.read().split('\n')]]
+
         return self
 
     def gather_data(self):
         Team.teams = sorted(Team.teams, key=lambda t: t.comparison(), reverse=True)
-        total_scored = NumberWeighted(0, 0)
-        total_scored_home = NumberWeighted(0, 0)
-        total_scored_away = NumberWeighted(0, 0)
-        for x in Team.teams:
-            s = TeamStats(x)
-            scored = s.get_scored()
-            scored_home = s.get_scored_home()
-            scored_away = s.get_scored_away()
-            missed = s.get_missed()
-            missed_home = s.get_missed_home()
-            missed_away = s.get_missed_away()
-            total_scored += scored
-            total_scored_home += s.get_scored_home()
-            total_scored_away += s.get_scored_away()
-            print(x.name, x.get_points(), '>',
-                  scored, '(', scored_home, '+', scored_away, ')', ':',
-                  missed,'(', missed_home, '+', missed_away, ')',
-                  "> {:d}':{:d}' / goal".format(*[int(90 / scored.n), int(90 / missed.n)]))
-        print('Total scored:', total_scored, 'Home:', total_scored_home, 'Away:', total_scored_away)
+        TeamStats.calculate_mean_goals()
+        print('Per Tour:', int(TeamStats.mean_goals * self.config.matches_per_tour * 2 * 100) / 100,
+              'Home:', int(TeamStats.mean_goals_home * self.config.matches_per_tour * 100) / 100,
+              'Away:', int(TeamStats.mean_goals_away * self.config.matches_per_tour * 100) / 100)
+
+        return self
+
+    def estimate_pairs(self):
         return self
 
     def stats(self):
-        self.read_data().gather_data()
+        self.read_data().gather_data().estimate_pairs()
+        g = 0
+        for pair in self.pairs:
+            pair.estimate()
+            g += pair.goals_home.n + pair.goals_away.n
+        # print(g)
+        g0 = -0.499
+        n = 2 * len(self.pairs)
+        a = (TeamStats.mean_goals - g0) / (g / n - Pair.min_goals)
+        # print(Pair.min_goals, Pair.max_goals, a)
+        for pair in self.pairs:
+            goals_home = (pair.goals_home.n - Pair.min_goals) * a + g0
+            goals_away = (pair.goals_away.n - Pair.min_goals) * a + g0
+            print(pair.team_home, '-', pair.team_away, round(goals_home), ':', round(goals_away))
+            # print(int(pair.goals_home.n * 100) / 100, ':', int(pair.goals_away.n * 100) / 100)
         return self
 
 
