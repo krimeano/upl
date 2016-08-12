@@ -5,6 +5,7 @@ class Config:
     filename_results = "results.csv"
     filename_pairs = "pairs.csv"
     matches_per_tour = 7
+    cut_matches = {"Dnipro": 13}
     # filename = "rpl.csv"
 
 
@@ -111,6 +112,9 @@ class Team:
         self.drawn_home = 0
         self.drawn_away = 0
         self.stats = TeamStats(self)
+        self.cut_matches = 0
+        if name in Config.cut_matches:
+            self.cut_matches = Config.cut_matches[name]
 
     @staticmethod
     def get_team(name):
@@ -310,7 +314,7 @@ class Upl:
             goals_home = (pair.goals_home.n - Pair.min_goals) * a + g0
             goals_away = (pair.goals_away.n - Pair.min_goals) * a + g0
             print(pair.team_home, '-', pair.team_away, round(goals_home), ':', round(goals_away))
-            # print(int(pair.goals_home.n * 100) / 100, ':', int(pair.goals_away.n * 100) / 100)
+            # print(' - ', int(pair.goals_home.n * 100) / 100, ':', int(pair.goals_away.n * 100) / 100)
         return self
 
 
